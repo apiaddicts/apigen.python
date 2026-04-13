@@ -1,0 +1,363 @@
+# ─────────────────────────────────────────────────────────────────────
+# asyncapi_v3_exhaustive.yaml
+# Spec AsyncAPI v3.0.0 ORIGINAL — solo features nativas, SIN x-apigen
+#
+# Cubre: allOf, oneOf, anyOf, discriminator, traits, parameters,
+#         headers, correlationId, reply, security, $ref anidados
+# ─────────────────────────────────────────────────────────────────────
+asyncapi: 3.0.0
+info:
+  title: Exhaustive AsyncAPI v3 Features
+  version: 1.0.0
+  description: >
+    Spec de prueba que ejercita TODAS las features nativas de AsyncAPI v3.
+    Este archivo NO contiene extensiones x-apigen.
+
+defaultContentType: application/json
+
+# ── SERVERS ──────────────────────────────────────────────────────────
+servers:
+  production:
+    host: kafka.production:9092
+    protocol: kafka
+    description: Kafka cluster with SASL/SCRAM authentication
+    security:
+      - $ref: "#/components/securitySchemes/saslScram"
+
+  staging:
+    host: kafka.staging:9092
+    protocol: kafka
+    description: Kafka cluster without auth
+
+# ── CHANNELS ─────────────────────────────────────────────────────────
+channels:
+  # Canal con parámetros dinámicos
+  orderEvents:
+    address: "shop.orders.{region}.events"
+    parameters:
+      region:
+        $ref: "#/components/parameters/regionParam"
+    messages:
+      OrderCreated:
+        $ref: "#/components/messages/OrderCreatedEvent"
+      OrderUpdated:
+        $ref: "#/components/messages/OrderUpdatedEvent"
+
+  # Canal simple
+  userLifecycle:
+    address: "shop.users.lifecycle"
+    messages:
+      UserRegistered:
+        $ref: "#/components/messages/UserRegisteredEvent"
+
+  # Canal de notificaciones (sin BD)
+  notifications:
+    address: "shop.notifications.outbound"
+    messages:
+      Notify:
+        $ref: "#/components/messages/NotificationCommand"
+
+  # Canal RPC: request
+  priceCheckRequest:
+    address: "shop.pricing.check.request"
+    messages:
+      PriceReq:
+        $ref: "#/components/messages/PriceCheckRequest"
+
+  # Canal RPC: reply
+  priceCheckReply:
+    address: "shop.pricing.check.reply"
+    messages:
+      PriceRes:
+        $ref: "#/components/messages/PriceCheckResponse"
+
+  # Canal para publisher (send)
+  orderShipped:
+    address: "shop.orders.shipped"
+    messages:
+      Shipped:
+        $ref: "#/components/messages/OrderShippedEvent"
+
+# ── OPERATIONS ───────────────────────────────────────────────────────
+operations:
+  # receive con channel parameterizado
+  onOrderCreated:
+    action: receive
+    channel:
+      $ref: "#/channels/orderEvents"
+    messages:
+      - $ref: "#/channels/orderEvents/messages/OrderCreated"
+    bindings:
+      kafka:
+        groupId: "order-service"
+
+  onOrderUpdated:
+    action: receive
+    channel:
+      $ref: "#/channels/orderEvents"
+    messages:
+      - $ref: "#/channels/orderEvents/messages/OrderUpdated"
+    bindings:
+      kafka:
+        groupId: "order-service"
+
+  onUserRegistered:
+    action: receive
+    channel:
+      $ref: "#/channels/userLifecycle"
+    messages:
+      - $ref: "#/channels/userLifecycle/messages/UserRegistered"
+    bindings:
+      kafka:
+        groupId: "user-service"
+
+  onNotification:
+    action: receive
+    channel:
+      $ref: "#/channels/notifications"
+
+  # RPC: send request + receive reply
+  requestPriceCheck:
+    action: send
+    channel:
+      $ref: "#/channels/priceCheckRequest"
+    reply:
+      channel:
+        $ref: "#/channels/priceCheckReply"
+
+  # Publisher
+  publishOrderShipped:
+    action: send
+    channel:
+      $ref: "#/channels/orderShipped"
+
+# ── COMPONENTS ───────────────────────────────────────────────────────
+components:
+  # ── Messages ──
+  messages:
+    # Usa allOf en payload + traits + headers
+    OrderCreatedEvent:
+      headers:
+        type: object
+        properties:
+          traceId:
+            type: string
+            description: Distributed tracing ID
+          eventType:
+            type: string
+            enum: [ORDER_CREATED]
+      traits:
+        - $ref: "#/components/messageTraits/commonKafkaHeaders"
+      payload:
+        $ref: "#/components/schemas/OrderCreatedPayload"
+
+    # Usa oneOf en payload
+    OrderUpdatedEvent:
+      payload:
+        $ref: "#/components/schemas/OrderUpdatePayload"
+
+    UserRegisteredEvent:
+      payload:
+        $ref: "#/components/schemas/UserPayload"
+
+    # Sin BD — payload inline
+    NotificationCommand:
+      payload:
+        type: object
+        required: [channel, recipient, body]
+        properties:
+          channel:
+            type: string
+            enum: [email, sms, push]
+          recipient:
+            type: string
+          body:
+            type: string
+          metadata:
+            type: object
+            additionalProperties: true
+
+    # RPC request con correlationId
+    PriceCheckRequest:
+      correlationId:
+        $ref: "#/components/correlationIds/defaultCorrelation"
+      payload:
+        type: object
+        required: [productId]
+        properties:
+          productId:
+            type: string
+          currency:
+            type: string
+            default: "USD"
+
+    # RPC response con correlationId
+    PriceCheckResponse:
+      correlationId:
+        $ref: "#/components/correlationIds/defaultCorrelation"
+      payload:
+        type: object
+        properties:
+          productId:
+            type: string
+          price:
+            type: number
+            format: float
+          available:
+            type: boolean
+
+    OrderShippedEvent:
+      payload:
+        $ref: "#/components/schemas/OrderShippedPayload"
+
+  # ── Schemas ──
+  schemas:
+    # === allOf: composición (BaseEntity + OrderFields) ===
+    OrderCreatedPayload:
+      allOf:
+        - $ref: "#/components/schemas/BaseEntity"
+        - $ref: "#/components/schemas/OrderFields"
+        - type: object
+          properties:
+            createdAt:
+              type: string
+              format: date-time
+
+    # === oneOf: polimorfismo ===
+    OrderUpdatePayload:
+      oneOf:
+        - $ref: "#/components/schemas/StatusChangePayload"
+        - $ref: "#/components/schemas/AmountChangePayload"
+      discriminator: updateType
+
+    StatusChangePayload:
+      type: object
+      required: [orderId, updateType, newStatus]
+      properties:
+        orderId:
+          type: string
+        updateType:
+          type: string
+          enum: [STATUS_CHANGE]
+        newStatus:
+          type: string
+          enum: [PENDING, CONFIRMED, SHIPPED, DELIVERED, CANCELLED]
+
+    AmountChangePayload:
+      type: object
+      required: [orderId, updateType, newAmount]
+      properties:
+        orderId:
+          type: string
+        updateType:
+          type: string
+          enum: [AMOUNT_CHANGE]
+        newAmount:
+          type: number
+          format: float
+        reason:
+          type: string
+
+    # === anyOf: campos opcionales combinables ===
+    OrderShippedPayload:
+      anyOf:
+        - $ref: "#/components/schemas/BaseEntity"
+        - type: object
+          properties:
+            trackingNumber:
+              type: string
+            carrier:
+              type: string
+              enum: [fedex, ups, dhl, usps]
+
+    # Bloques reutilizables
+    BaseEntity:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+
+    OrderFields:
+      type: object
+      properties:
+        customerEmail:
+          type: string
+          format: email
+        status:
+          type: string
+          default: "PENDING"
+        totalAmount:
+          type: number
+          format: float
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineItem"
+
+    LineItem:
+      type: object
+      properties:
+        productId:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+          format: float
+
+    UserPayload:
+      type: object
+      required: [id, email]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        acceptedTermsAt:
+          type: string
+          format: date-time
+
+  # ── Parameters ──
+  parameters:
+    regionParam:
+      description: Geographic region for topic routing
+      enum: [us, eu, latam, apac]
+      default: us
+
+  # ── Correlation IDs ──
+  correlationIds:
+    defaultCorrelation:
+      location: "$message.header#/correlationId"
+      description: Standard correlation ID from message headers
+
+  # ── Message Traits ──
+  messageTraits:
+    commonKafkaHeaders:
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: Kafka message key
+      headers:
+        type: object
+        properties:
+          correlationId:
+            type: string
+          sourceService:
+            type: string
+
+  # ── Security Schemes ──
+  securitySchemes:
+    saslScram:
+      type: scramSha256
+      description: SASL/SCRAM-SHA-256 authentication
+    apiKey:
+      type: httpApiKey
+      name: X-API-Key
+      in: header

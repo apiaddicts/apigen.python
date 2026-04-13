@@ -1,0 +1,266 @@
+openapi: 3.0.0
+info:
+  title: api-apigen-python
+  version: 1.1.0
+  description:
+    API for generating Python archetypes from various specification files
+    (OpenAPI, AsyncAPI, GraphQL).
+  license:
+    name: License name
+    url: https://www.gnu.org/licenses/lgpl-3.0
+  contact:
+    name: Example lastname
+    email: example.lastname@mail.es
+servers:
+  - url: https://api.cloudappi.com
+    description: Production server
+tags:
+  - name: System
+    description: Operations related to the system status and health.
+  - name: Generation
+    description: Operations for generating code from specifications.
+paths:
+  /api/v1/status:
+    get:
+      tags:
+        - System
+      summary: Check API Status.
+      description: Returns the current status of the API.
+      operationId: getApiStatus
+      responses:
+        "200":
+          $ref: "#/components/responses/StatusSuccessResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsResponse"
+        default:
+          $ref: "#/components/responses/InternalServerErrorResponse"
+  /api/v1/generate:
+    post:
+      tags:
+        - Generation
+      summary: Generate API Code.
+      description:
+        Uploads a specification file (OpenAPI, AsyncAPI, or GraphQL) and
+        generates a Python project structure as a ZIP file. Optionally, an existing
+        project ZIP can be provided to regenerate the project while preserving custom
+        code blocks (CUSTOM CODE markers).
+      operationId: generateCode
+      requestBody:
+        $ref: "#/components/requestBodies/GenerateRequestBody"
+      responses:
+        "200":
+          $ref: "#/components/responses/GenerateSuccessResponse"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntityResponse"
+        "429":
+          $ref: "#/components/responses/TooManyRequestsResponse"
+        default:
+          $ref: "#/components/responses/InternalServerErrorResponse"
+components:
+  requestBodies:
+    GenerateRequestBody:
+      description:
+        The specification file, its type, and optionally an existing project
+        ZIP for regeneration.
+      content:
+        multipart/form-data:
+          schema:
+            $ref: "#/components/schemas/GenerateRequest"
+      required: true
+  responses:
+    StatusSuccessResponse:
+      description: Successful Response
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/StatusResponse"
+          examples:
+            success:
+              summary: Successful Status
+              value:
+                status: ok
+    GenerateSuccessResponse:
+      description: Successful Response
+      content:
+        application/zip:
+          schema:
+            type: string
+            format: binary
+    BadRequestResponse:
+      description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            badRequest:
+              summary: Bad Request Example
+              value:
+                message: Validation failed.
+                errors:
+                  - Invalid file format.
+                  - Missing required field 'info'.
+    UnprocessableEntityResponse:
+      description: Validation Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/HTTPValidationError"
+          examples:
+            validationError:
+              summary: Validation Error Example
+              value:
+                detail:
+                  - loc:
+                      - body
+                      - file
+                    msg: Field required
+                    type: value_error.missing
+    TooManyRequestsResponse:
+      description: Too Many Requests
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            tooManyRequests:
+              summary: Rate Limit Exceeded
+              value:
+                message: Rate limit exceeded.
+    InternalServerErrorResponse:
+      description: Internal Server Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          examples:
+            internalError:
+              summary: Internal Error Example
+              value:
+                message: An unexpected error occurred.
+  schemas:
+    GenerateRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: The specification file to upload.
+        fileType:
+          type: string
+          enum:
+            - openapi
+            - graphql
+            - asyncapi
+          description: The type of the specification file.
+          example: openapi
+          minLength: 1
+          maxLength: 20
+        existing_project:
+          type: string
+          format: binary
+          description:
+            Optional ZIP file of an existing generated project. When provided,
+            the generator will regenerate the project preserving any user custom code
+            (blocks marked with CUSTOM CODE markers). This enables updating a previously
+            generated project with a new or modified specification without losing manual
+            code changes.
+      required:
+        - file
+        - fileType
+      example:
+        fileType: openapi
+    StatusResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+          minLength: 2
+          maxLength: 20
+      required:
+        - status
+      example:
+        status: ok
+    ErrorResponse:
+      title: ErrorResponse
+      required:
+        - message
+      type: object
+      properties:
+        message:
+          title: Message
+          type: string
+          example: An error occurred.
+          minLength: 1
+          maxLength: 1000
+        errors:
+          title: Errors
+          type: array
+          items:
+            type: string
+          description: List of specific error messages.
+          example:
+            - Error 1
+            - Error 2
+      example:
+        message: Validation failed.
+        errors:
+          - Error 1
+          - Error 2
+    HTTPValidationError:
+      title: HTTPValidationError
+      type: object
+      properties:
+        detail:
+          title: Detail
+          type: array
+          items:
+            $ref: "#/components/schemas/ValidationError"
+      example:
+        detail:
+          - loc:
+              - body
+              - file
+            msg: Field required
+            type: value_error.missing
+    ValidationError:
+      title: ValidationError
+      required:
+        - loc
+        - msg
+        - type
+      type: object
+      properties:
+        loc:
+          title: Location
+          type: array
+          items:
+            anyOf:
+              - type: string
+                minLength: 1
+                maxLength: 100
+              - type: integer
+          example:
+            - body
+            - file
+        msg:
+          title: Message
+          type: string
+          example: Field required
+          minLength: 1
+          maxLength: 500
+        type:
+          title: Error Type
+          type: string
+          example: value_error.missing
+          minLength: 1
+          maxLength: 100
+      example:
+        loc:
+          - body
+          - file
+        msg: Field required
+        type: value_error.missing

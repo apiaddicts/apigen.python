@@ -1,0 +1,104 @@
+include:
+  - project: 'cloudappi/templates/gitlab-ci-templates'
+    ref: main
+    file: '/project-templates/python.yml'
+
+variables:
+  SONAR_PROJECT: "apigen-python"
+  APP_NAME: apigen-python
+  DOCKER_IMAGE_PATH: "registry.gitlab.com/cloudappi/clo-innova/opendataspace/apigen-python"
+  REQUIREMENTS_SOURCE: "requirements.txt"
+  PYTHON_VERSION: python:3.13
+  DOCKER_DOCKERFILE: "Dockerfile"
+  PROJECT_IMAGE_TAG_VERSION: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+  PROJECT_IMAGE_VERSION: "${CI_REGISTRY_IMAGE}:${CI_COMMIT_SHORT_SHA}"
+  VALIDATE_MAIN_BRANCHES: "false"
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: /certs
+  DOCKER_TLS_VERIFY: 1
+  DOCKER_CERT_PATH: /certs/client
+  DOCKER_IMAGE_VERSION: docker:latest
+
+
+test-python:
+  tags:
+      - waima
+
+validate-python-sonar:
+  tags:
+      - waima
+
+validate-dependencies:
+  tags:
+      - waima
+
+build-docker:
+  services:
+    - docker:dind
+  tags:
+      - waima
+
+validate-trivy:
+  tags:
+      - waima
+
+validate-grype:
+  tags:
+      - waima
+
+deploy:develop:
+  stage: deploy
+  environment: develop
+  variables:
+    NAMESPACE: apigen-python-develop
+  image:
+    name: alpine/kubectl:latest
+    entrypoint: [""]
+  before_script: ""
+  script:
+    - apk add --no-cache gettext
+    - sed -i "s|IMAGE_GITLAB|$PROJECT_IMAGE_TAG_VERSION|g;" kubernetes/develop/deployment.yaml;  
+    - envsubst < kubernetes/develop/deployment.yaml | kubectl -n "$NAMESPACE" apply -f -
+  only:
+    refs:
+      - develop
+  tags:
+      - waima
+
+deploy:pre:
+  stage: deploy
+  environment: pre
+  variables:
+    NAMESPACE: apigen-python-pre
+  image:
+    name: alpine/kubectl:latest
+    entrypoint: [""]
+  before_script: ""
+  script:
+    - apk add --no-cache gettext
+    - sed -i "s|IMAGE_GITLAB|$PROJECT_IMAGE_TAG_VERSION|g;" kubernetes/pre/deployment.yaml;  
+    - envsubst < kubernetes/pre/deployment.yaml | kubectl -n "$NAMESPACE" apply -f -
+  only:
+    refs:
+      - pre
+  tags:
+      - waima
+
+deploy:pro:
+  stage: deploy
+  environment: production
+  variables:
+    NAMESPACE: apigen-python
+  image:
+    name: alpine/kubectl:latest
+    entrypoint: [""]
+  before_script: ""
+  script:
+    - apk add --no-cache gettext
+    - sed -i "s|IMAGE_GITLAB|$PROJECT_IMAGE_TAG_VERSION|g;" kubernetes/production/deployment.yaml;  
+    - envsubst < kubernetes/production/deployment.yaml | kubectl -n "$NAMESPACE" apply -f -
+  only:
+    refs:
+      - /^[0-9]+(\.[0-9]+)+(\.[0-9]+)$/
+  tags:
+      - waima

@@ -1,0 +1,453 @@
+# ─────────────────────────────────────────────────────────────────────
+# asyncapi_v3_exhaustive-enriched.yaml
+# Spec AsyncAPI v3.0.0 ENRICHED — features nativas + x-apigen extensions
+#
+# Misma estructura que el original, pero AÑADE:
+# - x-apigen-project (metadatos del proyecto generado)
+# - x-apigen-models (entidades de BD con relational-persistence)
+# - x-apigen-binding (mapping message→model+action)
+# - x-apigen-mapping (schemas DTO→entity)
+# ─────────────────────────────────────────────────────────────────────
+asyncapi: 3.0.0
+info:
+  title: Exhaustive AsyncAPI v3 Features
+  version: 1.0.0
+  description: >
+    Spec enriched que ejercita TODAS las features nativas de AsyncAPI v3
+    PLUS las extensiones x-apigen para generación de código.
+
+# ── x-apigen-project ──
+x-apigen-project:
+  name: exhaustive-asyncapi
+  version: "1.0.0"
+  description: "Exhaustive AsyncAPI v3 features with full apigen extensions"
+  data-driver: postgresql
+
+defaultContentType: application/json
+
+# ── SERVERS ──────────────────────────────────────────────────────────
+servers:
+  production:
+    host: kafka.production:9092
+    protocol: kafka
+    description: Kafka cluster with SASL/SCRAM authentication
+    security:
+      - $ref: "#/components/securitySchemes/saslScram"
+
+  staging:
+    host: kafka.staging:9092
+    protocol: kafka
+    description: Kafka cluster without auth
+
+# ── CHANNELS ─────────────────────────────────────────────────────────
+channels:
+  # Canal con parámetros dinámicos
+  orderEvents:
+    address: "shop.orders.{region}.events"
+    parameters:
+      region:
+        $ref: "#/components/parameters/regionParam"
+    messages:
+      OrderCreated:
+        $ref: "#/components/messages/OrderCreatedEvent"
+      OrderUpdated:
+        $ref: "#/components/messages/OrderUpdatedEvent"
+
+  # Canal simple
+  userLifecycle:
+    address: "shop.users.lifecycle"
+    messages:
+      UserRegistered:
+        $ref: "#/components/messages/UserRegisteredEvent"
+
+  # Canal de notificaciones (sin BD)
+  notifications:
+    address: "shop.notifications.outbound"
+    messages:
+      Notify:
+        $ref: "#/components/messages/NotificationCommand"
+
+  # Canal RPC: request
+  priceCheckRequest:
+    address: "shop.pricing.check.request"
+    messages:
+      PriceReq:
+        $ref: "#/components/messages/PriceCheckRequest"
+
+  # Canal RPC: reply
+  priceCheckReply:
+    address: "shop.pricing.check.reply"
+    messages:
+      PriceRes:
+        $ref: "#/components/messages/PriceCheckResponse"
+
+  # Canal para publisher (send)
+  orderShipped:
+    address: "shop.orders.shipped"
+    messages:
+      Shipped:
+        $ref: "#/components/messages/OrderShippedEvent"
+
+# ── OPERATIONS ───────────────────────────────────────────────────────
+operations:
+  # receive con channel parameterizado
+  onOrderCreated:
+    action: receive
+    channel:
+      $ref: "#/channels/orderEvents"
+    messages:
+      - $ref: "#/channels/orderEvents/messages/OrderCreated"
+    bindings:
+      kafka:
+        groupId: "order-service"
+
+  onOrderUpdated:
+    action: receive
+    channel:
+      $ref: "#/channels/orderEvents"
+    messages:
+      - $ref: "#/channels/orderEvents/messages/OrderUpdated"
+    bindings:
+      kafka:
+        groupId: "order-service"
+
+  onUserRegistered:
+    action: receive
+    channel:
+      $ref: "#/channels/userLifecycle"
+    messages:
+      - $ref: "#/channels/userLifecycle/messages/UserRegistered"
+    bindings:
+      kafka:
+        groupId: "user-service"
+
+  onNotification:
+    action: receive
+    channel:
+      $ref: "#/channels/notifications"
+
+  # RPC: send request + receive reply
+  requestPriceCheck:
+    action: send
+    channel:
+      $ref: "#/channels/priceCheckRequest"
+    reply:
+      channel:
+        $ref: "#/channels/priceCheckReply"
+
+  # Publisher
+  publishOrderShipped:
+    action: send
+    channel:
+      $ref: "#/channels/orderShipped"
+
+# ── COMPONENTS ───────────────────────────────────────────────────────
+components:
+  # ── x-apigen-models (BD entities) ──
+  x-apigen-models:
+    Order:
+      relational-persistence:
+        table: orders
+      attributes:
+        - name: id
+          type: String
+          relational-persistence:
+            column: id
+            primary-key: true
+        - name: customerEmail
+          type: String
+          relational-persistence:
+            column: customer_email
+        - name: status
+          type: String
+          relational-persistence:
+            column: status
+        - name: totalAmount
+          type: Float
+          relational-persistence:
+            column: total_amount
+
+    User:
+      relational-persistence:
+        table: users
+      attributes:
+        - name: id
+          type: String
+          relational-persistence:
+            column: id
+            primary-key: true
+        - name: email
+          type: String
+          relational-persistence:
+            column: email
+        - name: displayName
+          type: String
+          relational-persistence:
+            column: display_name
+
+  # ── Messages (con x-apigen-binding) ──
+  messages:
+    # allOf payload + traits + headers + x-apigen-binding
+    OrderCreatedEvent:
+      x-apigen-binding:
+        model: Order
+        action: create
+      headers:
+        type: object
+        properties:
+          traceId:
+            type: string
+            description: Distributed tracing ID
+          eventType:
+            type: string
+            enum: [ORDER_CREATED]
+      traits:
+        - $ref: "#/components/messageTraits/commonKafkaHeaders"
+      payload:
+        $ref: "#/components/schemas/OrderCreatedPayload"
+
+    # oneOf payload + x-apigen-binding
+    OrderUpdatedEvent:
+      x-apigen-binding:
+        model: Order
+        action: update
+      payload:
+        $ref: "#/components/schemas/OrderUpdatePayload"
+
+    # Simple + x-apigen-binding
+    UserRegisteredEvent:
+      x-apigen-binding:
+        model: User
+        action: create
+      payload:
+        $ref: "#/components/schemas/UserPayload"
+
+    # Sin BD — custom action
+    NotificationCommand:
+      x-apigen-binding:
+        action: custom
+      payload:
+        type: object
+        required: [channel, recipient, body]
+        properties:
+          channel:
+            type: string
+            enum: [email, sms, push]
+          recipient:
+            type: string
+          body:
+            type: string
+          metadata:
+            type: object
+            additionalProperties: true
+
+    # RPC request con correlationId
+    PriceCheckRequest:
+      correlationId:
+        $ref: "#/components/correlationIds/defaultCorrelation"
+      payload:
+        type: object
+        required: [productId]
+        properties:
+          productId:
+            type: string
+          currency:
+            type: string
+            default: "USD"
+
+    # RPC response con correlationId
+    PriceCheckResponse:
+      correlationId:
+        $ref: "#/components/correlationIds/defaultCorrelation"
+      payload:
+        type: object
+        properties:
+          productId:
+            type: string
+          price:
+            type: number
+            format: float
+          available:
+            type: boolean
+
+    # Publisher con x-apigen-binding
+    OrderShippedEvent:
+      x-apigen-binding:
+        model: Order
+        action: update
+      payload:
+        $ref: "#/components/schemas/OrderShippedPayload"
+
+  # ── Schemas ──
+  schemas:
+    # === allOf: composición (BaseEntity + OrderFields) ===
+    OrderCreatedPayload:
+      x-apigen-mapping:
+        model: Order
+      allOf:
+        - $ref: "#/components/schemas/BaseEntity"
+        - $ref: "#/components/schemas/OrderFields"
+        - type: object
+          properties:
+            createdAt:
+              type: string
+              format: date-time
+
+    # === oneOf: polimorfismo ===
+    OrderUpdatePayload:
+      x-apigen-mapping:
+        model: Order
+      oneOf:
+        - $ref: "#/components/schemas/StatusChangePayload"
+        - $ref: "#/components/schemas/AmountChangePayload"
+      discriminator: updateType
+
+    StatusChangePayload:
+      type: object
+      required: [orderId, updateType, newStatus]
+      properties:
+        orderId:
+          type: string
+        updateType:
+          type: string
+          enum: [STATUS_CHANGE]
+        newStatus:
+          type: string
+          enum: [PENDING, CONFIRMED, SHIPPED, DELIVERED, CANCELLED]
+          x-apigen-mapping:
+            field: status
+
+    AmountChangePayload:
+      type: object
+      required: [orderId, updateType, newAmount]
+      properties:
+        orderId:
+          type: string
+        updateType:
+          type: string
+          enum: [AMOUNT_CHANGE]
+        newAmount:
+          type: number
+          format: float
+          x-apigen-mapping:
+            field: totalAmount
+        reason:
+          type: string
+
+    # === anyOf: campos opcionales combinables ===
+    OrderShippedPayload:
+      x-apigen-mapping:
+        model: Order
+      anyOf:
+        - $ref: "#/components/schemas/BaseEntity"
+        - type: object
+          properties:
+            trackingNumber:
+              type: string
+            carrier:
+              type: string
+              enum: [fedex, ups, dhl, usps]
+
+    # Bloques reutilizables
+    BaseEntity:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+          format: uuid
+
+    OrderFields:
+      type: object
+      properties:
+        customerEmail:
+          type: string
+          format: email
+          x-apigen-mapping:
+            field: customerEmail
+        status:
+          type: string
+          default: "PENDING"
+          x-apigen-mapping:
+            field: status
+        totalAmount:
+          type: number
+          format: float
+          x-apigen-mapping:
+            field: totalAmount
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineItem"
+
+    LineItem:
+      type: object
+      properties:
+        productId:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+          format: float
+
+    UserPayload:
+      x-apigen-mapping:
+        model: User
+      type: object
+      required: [id, email]
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+          x-apigen-mapping:
+            field: email
+        displayName:
+          type: string
+          x-apigen-mapping:
+            field: displayName
+        acceptedTermsAt:
+          type: string
+          format: date-time
+
+  # ── Parameters ──
+  parameters:
+    regionParam:
+      description: Geographic region for topic routing
+      enum: [us, eu, latam, apac]
+      default: us
+
+  # ── Correlation IDs ──
+  correlationIds:
+    defaultCorrelation:
+      location: "$message.header#/correlationId"
+      description: Standard correlation ID from message headers
+
+  # ── Message Traits ──
+  messageTraits:
+    commonKafkaHeaders:
+      bindings:
+        kafka:
+          key:
+            type: string
+            description: Kafka message key
+      headers:
+        type: object
+        properties:
+          correlationId:
+            type: string
+          sourceService:
+            type: string
+
+  # ── Security Schemes ──
+  securitySchemes:
+    saslScram:
+      type: scramSha256
+      description: SASL/SCRAM-SHA-256 authentication
+    apiKey:
+      type: httpApiKey
+      name: X-API-Key
+      in: header

@@ -1,0 +1,87 @@
+.idea/
+
+# virtualenv
+.venv
+venv/
+ENV/
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit tests / coverage reports
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+test_asyncapi.py
+test_openapi.py
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+.idea/
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+prueba2/
+
+# Outputs
+results/
+logs/
+/prueba
+*.zip
+.DS_Store
+/output
+
+# Claude Code files
+.claude/
+CLAUDE.md
+openapi.json
+
+# Node.js dependencies
+node_modules/
+package-lock.json
+src/domain/services/openapi_parser_service.py
+src/domain/services/base_spec_parser_service.py
+src/domain/services/asyncapi_parser_service.py
+
+
+# IDE
+.vscode/
+python-rest-fastapi-template/
+
+# Generated output (test runs)
+output_test/
+*.db
+
+# uv
+uv.lock
+.venv*/
+nohup.out
