@@ -17,3 +17,4 @@ sqlacodegen~=3.1.1
 
 jinja2~=3.1.6
 python-multipart~=0.0.20
+apigen_copier @ git+https://github.com/apiaddicts/ods-data-generator-examples.git
